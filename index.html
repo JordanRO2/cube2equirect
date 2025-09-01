@@ -410,6 +410,7 @@
                 <div class="control-group">
                     <label for="resolution">Resolution</label>
                     <select id="resolution">
+                        <option value="dynamic">Dynamic (Match Input)</option>
                         <option value="1024x512">1K — 1024 × 512</option>
                         <option value="2048x1024" selected>2K — 2048 × 1024</option>
                         <option value="4096x2048">4K — 4096 × 2048</option>
@@ -484,6 +485,13 @@
         function updateConvertButton() {
             const allLoaded = Object.values(faces).every(face => face !== null);
             document.getElementById('convertBtn').disabled = !allLoaded;
+            
+            // Update resolution dropdown with dynamic option if all faces loaded
+            if (allLoaded && faces.front) {
+                const dynamicOption = document.querySelector('#resolution option[value="dynamic"]');
+                const size = faces.front.width;
+                dynamicOption.textContent = `Dynamic (${size * 2} × ${size})`;
+            }
         }
 
         function showStatus(message, type) {
@@ -508,9 +516,19 @@
             loader.classList.add('show');
             
             // Get resolution from dropdown
-            const resolution = document.getElementById('resolution').value.split('x');
-            const outputWidth = parseInt(resolution[0]);
-            const outputHeight = parseInt(resolution[1]);
+            let outputWidth, outputHeight;
+            const resolutionValue = document.getElementById('resolution').value;
+            
+            if (resolutionValue === 'dynamic') {
+                // Use 2:1 aspect ratio based on input face size
+                const faceSize = faces.front.width;
+                outputWidth = faceSize * 2;
+                outputHeight = faceSize;
+            } else {
+                const resolution = resolutionValue.split('x');
+                outputWidth = parseInt(resolution[0]);
+                outputHeight = parseInt(resolution[1]);
+            }
             
             const canvas = document.getElementById('outputCanvas');
             const ctx = canvas.getContext('2d');
@@ -622,10 +640,18 @@
 
         function downloadImage() {
             const canvas = document.getElementById('outputCanvas');
-            const link = document.createElement('a');
-            link.download = 'equirectangular_panorama.png';
-            link.href = canvas.toDataURL();
-            link.click();
+            
+            // Convert to blob for uncompressed PNG
+            canvas.toBlob(function(blob) {
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.download = 'equirectangular_panorama.png';
+                link.href = url;
+                link.click();
+                
+                // Clean up
+                setTimeout(() => URL.revokeObjectURL(url), 100);
+            }, 'image/png', 1.0); // 1.0 = maximum quality (no compression)
         }
     </script>
 </body>
