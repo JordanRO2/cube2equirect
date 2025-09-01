@@ -264,6 +264,18 @@
             display: inline-block;
         }
 
+        #downloadExrBtn {
+            background: #000000;
+            color: #ffffff;
+            border: 1px solid #ffffff;
+            margin-left: 10px;
+        }
+
+        #downloadExrBtn:hover {
+            background: #ffffff;
+            color: #000000;
+        }
+
         .status {
             text-align: center;
             padding: 20px;
@@ -368,7 +380,7 @@
                 <li>Upload all six cubemap faces</li>
                 <li>Select output resolution preset</li>
                 <li>Convert to equirectangular format</li>
-                <li>Download panoramic image</li>
+                <li>Download panoramic image (PNG or EXR)</li>
             </ol>
         </div>
 
@@ -416,6 +428,13 @@
                         <option value="8192x4096">8K — 8192 × 4096</option>
                     </select>
                 </div>
+                <div class="control-group">
+                    <label for="format">Format</label>
+                    <select id="format">
+                        <option value="png">PNG (8-bit)</option>
+                        <option value="exr">EXR (32-bit HDR)</option>
+                    </select>
+                </div>
                 <button id="convertBtn" onclick="convertToEquirectangular()">Convert</button>
             </div>
 
@@ -432,6 +451,7 @@
             <canvas id="outputCanvas"></canvas>
             <div class="download-section">
                 <button id="downloadBtn" onclick="downloadImage()">Download Image</button>
+                <button id="downloadExrBtn" onclick="downloadEXR()" style="display: none; margin-left: 10px;">Download EXR</button>
             </div>
         </div>
     </div>
@@ -447,6 +467,8 @@
         };
 
         const faceImages = {};
+        let currentImageData = null;
+        let currentFormat = 'png';
 
         // Add file input listeners
         ['front', 'back', 'left', 'right', 'top', 'bottom'].forEach(face => {
@@ -507,10 +529,11 @@
             const loader = document.getElementById('loader');
             loader.classList.add('show');
             
-            // Get resolution from dropdown
+            // Get resolution and format from dropdowns
             const resolution = document.getElementById('resolution').value.split('x');
             const outputWidth = parseInt(resolution[0]);
             const outputHeight = parseInt(resolution[1]);
+            currentFormat = document.getElementById('format').value;
             
             const canvas = document.getElementById('outputCanvas');
             const ctx = canvas.getContext('2d');
@@ -613,10 +636,20 @@
             }
             
             ctx.putImageData(imageData, 0, 0);
+            currentImageData = imageData;
             
             loader.classList.remove('show');
             canvas.classList.add('show');
-            document.getElementById('downloadBtn').classList.add('show');
+            
+            // Show appropriate download button
+            if (currentFormat === 'exr') {
+                document.getElementById('downloadBtn').style.display = 'none';
+                document.getElementById('downloadExrBtn').style.display = 'inline-block';
+            } else {
+                document.getElementById('downloadBtn').classList.add('show');
+                document.getElementById('downloadExrBtn').style.display = 'none';
+            }
+            
             showStatus('Conversion complete', 'success');
         }
 
@@ -626,6 +659,214 @@
             link.download = 'equirectangular_panorama.png';
             link.href = canvas.toDataURL();
             link.click();
+        }
+
+        // Minimal EXR writer implementation
+        function createEXR(width, height, imageData) {
+            // EXR file structure components
+            const channels = 3; // RGB
+            const bytesPerPixel = 12; // 4 bytes per channel (float32)
+            const pixelDataSize = width * height * bytesPerPixel;
+            
+            // Helper functions for binary writing
+            function writeString(str) {
+                const bytes = new Uint8Array(str.length + 1);
+                for (let i = 0; i < str.length; i++) {
+                    bytes[i] = str.charCodeAt(i);
+                }
+                bytes[str.length] = 0; // null terminator
+                return bytes;
+            }
+            
+            function writeInt32(value) {
+                const buffer = new ArrayBuffer(4);
+                new DataView(buffer).setInt32(0, value, true);
+                return new Uint8Array(buffer);
+            }
+            
+            function writeFloat32(value) {
+                const buffer = new ArrayBuffer(4);
+                new DataView(buffer).setFloat32(0, value, true);
+                return new Uint8Array(buffer);
+            }
+            
+            // Build header
+            const magic = new Uint8Array([0x76, 0x2f, 0x31, 0x01]); // EXR magic number
+            const version = new Uint8Array([0x02, 0x00, 0x00, 0x00]); // Version 2
+            
+            // Create attributes
+            const attributes = [];
+            
+            // channels attribute
+            attributes.push(writeString('channels'));
+            attributes.push(writeString('chlist'));
+            const channelData = [];
+            ['B', 'G', 'R'].forEach(ch => {
+                channelData.push(writeString(ch));
+                channelData.push(new Uint8Array([0x00, 0x00, 0x00, 0x00])); // pixel type (float)
+                channelData.push(new Uint8Array([0x00, 0x00, 0x00, 0x00])); // pLinear
+                channelData.push(writeInt32(1)); // xSampling
+                channelData.push(writeInt32(1)); // ySampling
+            });
+            channelData.push(new Uint8Array([0x00])); // null terminator for channel list
+            const channelSize = channelData.reduce((sum, arr) => sum + arr.length, 0);
+            attributes.push(writeInt32(channelSize));
+            attributes.push(...channelData);
+            
+            // compression attribute
+            attributes.push(writeString('compression'));
+            attributes.push(writeString('compression'));
+            attributes.push(writeInt32(1));
+            attributes.push(new Uint8Array([0x00])); // NO_COMPRESSION
+            
+            // dataWindow attribute
+            attributes.push(writeString('dataWindow'));
+            attributes.push(writeString('box2i'));
+            attributes.push(writeInt32(16));
+            attributes.push(writeInt32(0)); // xMin
+            attributes.push(writeInt32(0)); // yMin
+            attributes.push(writeInt32(width - 1)); // xMax
+            attributes.push(writeInt32(height - 1)); // yMax
+            
+            // displayWindow attribute
+            attributes.push(writeString('displayWindow'));
+            attributes.push(writeString('box2i'));
+            attributes.push(writeInt32(16));
+            attributes.push(writeInt32(0)); // xMin
+            attributes.push(writeInt32(0)); // yMin
+            attributes.push(writeInt32(width - 1)); // xMax
+            attributes.push(writeInt32(height - 1)); // yMax
+            
+            // lineOrder attribute
+            attributes.push(writeString('lineOrder'));
+            attributes.push(writeString('lineOrder'));
+            attributes.push(writeInt32(1));
+            attributes.push(new Uint8Array([0x00])); // INCREASING_Y
+            
+            // pixelAspectRatio attribute
+            attributes.push(writeString('pixelAspectRatio'));
+            attributes.push(writeString('float'));
+            attributes.push(writeInt32(4));
+            attributes.push(writeFloat32(1.0));
+            
+            // screenWindowCenter attribute
+            attributes.push(writeString('screenWindowCenter'));
+            attributes.push(writeString('v2f'));
+            attributes.push(writeInt32(8));
+            attributes.push(writeFloat32(0.0));
+            attributes.push(writeFloat32(0.0));
+            
+            // screenWindowWidth attribute
+            attributes.push(writeString('screenWindowWidth'));
+            attributes.push(writeString('float'));
+            attributes.push(writeInt32(4));
+            attributes.push(writeFloat32(1.0));
+            
+            // End of header
+            attributes.push(new Uint8Array([0x00]));
+            
+            // Convert image data to float32 RGB
+            const pixelData = new Float32Array(width * height * 3);
+            for (let y = 0; y < height; y++) {
+                for (let x = 0; x < width; x++) {
+                    const srcIdx = (y * width + x) * 4;
+                    const dstIdx = (y * width + x) * 3;
+                    // Convert 8-bit to float and apply simple tone mapping
+                    pixelData[dstIdx + 2] = imageData.data[srcIdx] / 255.0;     // R
+                    pixelData[dstIdx + 1] = imageData.data[srcIdx + 1] / 255.0; // G
+                    pixelData[dstIdx] = imageData.data[srcIdx + 2] / 255.0;     // B
+                }
+            }
+            
+            // Build scan line offsets table
+            const scanlineOffsets = [];
+            let currentOffset = 0;
+            for (let y = 0; y < height; y++) {
+                scanlineOffsets.push(currentOffset);
+                currentOffset += width * 12 + 8; // pixel data + y coordinate + pixel count
+            }
+            
+            // Combine all parts
+            const headerSize = [
+                magic, version, ...attributes
+            ].reduce((sum, arr) => sum + arr.length, 0);
+            
+            const offsetTableSize = height * 8; // 8 bytes per scanline offset
+            const scanlineDataSize = height * (width * 12 + 8);
+            const totalSize = headerSize + offsetTableSize + scanlineDataSize;
+            
+            const exrData = new Uint8Array(totalSize);
+            let offset = 0;
+            
+            // Write header
+            [magic, version, ...attributes].forEach(arr => {
+                exrData.set(arr, offset);
+                offset += arr.length;
+            });
+            
+            // Write scanline offset table
+            const offsetTableStart = offset;
+            for (let i = 0; i < height; i++) {
+                const offsetBytes = new ArrayBuffer(8);
+                new DataView(offsetBytes).setBigUint64(0, BigInt(offsetTableStart + offsetTableSize + scanlineOffsets[i]), true);
+                exrData.set(new Uint8Array(offsetBytes), offset);
+                offset += 8;
+            }
+            
+            // Write scanline data
+            for (let y = 0; y < height; y++) {
+                // Write y coordinate
+                exrData.set(writeInt32(y), offset);
+                offset += 4;
+                
+                // Write pixel count
+                exrData.set(writeInt32(width * 12), offset);
+                offset += 4;
+                
+                // Write pixel data for this scanline
+                for (let x = 0; x < width; x++) {
+                    const pixelIdx = (y * width + x) * 3;
+                    for (let c = 0; c < 3; c++) {
+                        const floatBytes = writeFloat32(pixelData[pixelIdx + c]);
+                        exrData.set(floatBytes, offset);
+                        offset += 4;
+                    }
+                }
+            }
+            
+            return exrData;
+        }
+
+        function downloadEXR() {
+            if (!currentImageData) {
+                showStatus('No image data available', 'error');
+                return;
+            }
+            
+            const canvas = document.getElementById('outputCanvas');
+            const width = canvas.width;
+            const height = canvas.height;
+            
+            showStatus('Generating EXR file...', 'success');
+            
+            setTimeout(() => {
+                try {
+                    const exrData = createEXR(width, height, currentImageData);
+                    const blob = new Blob([exrData], { type: 'application/octet-stream' });
+                    const url = URL.createObjectURL(blob);
+                    
+                    const link = document.createElement('a');
+                    link.download = 'equirectangular_panorama.exr';
+                    link.href = url;
+                    link.click();
+                    
+                    URL.revokeObjectURL(url);
+                    showStatus('EXR download started', 'success');
+                } catch (error) {
+                    console.error('Error creating EXR:', error);
+                    showStatus('Failed to create EXR file', 'error');
+                }
+            }, 100);
         }
     </script>
 </body>
