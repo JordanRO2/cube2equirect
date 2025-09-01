@@ -13,8 +13,8 @@ A web-based tool for converting cubemap images to equirectangular panoramic form
 ## Usage
 
 1. **Open the Tool**
-   - Navigate to `cubemap-converter/index.html` in your browser
-   - Or host it on any static web server
+   - Open `index.html` in your browser
+   - Or visit the live site (if hosted on GitHub Pages)
 
 2. **Upload Cubemap Faces**
    - Click on each face panel or drag & drop images
