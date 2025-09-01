@@ -1,0 +1,632 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Cubemap to Equirectangular Converter</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #000000;
+            min-height: 100vh;
+            padding: 40px 20px;
+            color: #ffffff;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: #0a0a0a;
+            border: 1px solid #1a1a1a;
+            padding: 60px;
+        }
+
+        h1 {
+            font-size: 2em;
+            font-weight: 300;
+            letter-spacing: -0.02em;
+            margin-bottom: 10px;
+            color: #ffffff;
+        }
+
+        .subtitle {
+            color: #666666;
+            margin-bottom: 60px;
+            font-size: 0.95em;
+            font-weight: 300;
+            letter-spacing: 0.01em;
+        }
+
+        .instructions {
+            background: #050505;
+            border: 1px solid #1a1a1a;
+            padding: 30px;
+            margin-bottom: 40px;
+        }
+
+        .instructions h3 {
+            font-size: 0.9em;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            margin-bottom: 20px;
+            color: #888888;
+        }
+
+        .instructions ol {
+            list-style: none;
+            counter-reset: step-counter;
+        }
+
+        .instructions li {
+            counter-increment: step-counter;
+            position: relative;
+            padding-left: 35px;
+            margin-bottom: 12px;
+            color: #999999;
+            font-size: 0.95em;
+            line-height: 1.6;
+        }
+
+        .instructions li::before {
+            content: counter(step-counter);
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 24px;
+            height: 24px;
+            border: 1px solid #333333;
+            text-align: center;
+            line-height: 22px;
+            font-size: 0.85em;
+            color: #666666;
+        }
+
+        .face-inputs {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 2px;
+            margin-bottom: 40px;
+            background: #1a1a1a;
+            padding: 2px;
+        }
+
+        .face-input {
+            background: #0a0a0a;
+            padding: 30px 20px;
+            text-align: center;
+            cursor: pointer;
+            border: 1px solid transparent;
+            transition: all 0.2s ease;
+            position: relative;
+        }
+
+        .face-input:hover {
+            background: #0f0f0f;
+            border-color: #333333;
+        }
+
+        .face-input.loaded {
+            background: #0f0f0f;
+            border-color: #ffffff;
+        }
+
+        .face-input.loaded::after {
+            content: '✓';
+            position: absolute;
+            top: 10px;
+            right: 10px;
+            color: #ffffff;
+            font-size: 1.2em;
+        }
+
+        .face-input input[type="file"] {
+            display: none;
+        }
+
+        .face-label {
+            font-size: 0.85em;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #666666;
+            margin-bottom: 15px;
+            display: block;
+        }
+
+        .face-input.loaded .face-label {
+            color: #ffffff;
+        }
+
+        .face-preview {
+            width: 80px;
+            height: 80px;
+            margin: 15px auto 0;
+            object-fit: cover;
+            display: none;
+            filter: grayscale(100%) contrast(1.1);
+            opacity: 0.8;
+            border: 1px solid #2a2a2a;
+        }
+
+        .face-preview.show {
+            display: block;
+        }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 30px 0;
+            border-top: 1px solid #1a1a1a;
+            border-bottom: 1px solid #1a1a1a;
+            margin-bottom: 30px;
+        }
+
+        .control-group {
+            display: flex;
+            align-items: center;
+            gap: 20px;
+        }
+
+        label {
+            font-size: 0.9em;
+            font-weight: 400;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: #666666;
+        }
+
+        select {
+            background: #000000;
+            color: #ffffff;
+            border: 1px solid #333333;
+            padding: 12px 20px;
+            font-size: 0.9em;
+            font-family: inherit;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            min-width: 200px;
+        }
+
+        select:hover {
+            border-color: #666666;
+        }
+
+        select:focus {
+            outline: none;
+            border-color: #ffffff;
+        }
+
+        button {
+            background: #ffffff;
+            color: #000000;
+            border: none;
+            padding: 14px 40px;
+            font-size: 0.9em;
+            font-weight: 500;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        button:hover:not(:disabled) {
+            background: #e0e0e0;
+        }
+
+        button:active:not(:disabled) {
+            background: #cccccc;
+        }
+
+        button:disabled {
+            opacity: 0.2;
+            cursor: not-allowed;
+        }
+
+        #outputCanvas {
+            max-width: 100%;
+            height: auto;
+            border: 1px solid #1a1a1a;
+            display: none;
+            margin: 40px auto;
+            filter: contrast(1.05);
+        }
+
+        #outputCanvas.show {
+            display: block;
+        }
+
+        .download-section {
+            text-align: center;
+            margin-top: 40px;
+        }
+
+        #downloadBtn {
+            background: #000000;
+            color: #ffffff;
+            border: 1px solid #ffffff;
+            display: none;
+        }
+
+        #downloadBtn:hover {
+            background: #ffffff;
+            color: #000000;
+        }
+
+        #downloadBtn.show {
+            display: inline-block;
+        }
+
+        .status {
+            text-align: center;
+            padding: 20px;
+            margin: 30px 0;
+            font-size: 0.9em;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            display: none;
+            border: 1px solid;
+        }
+
+        .status.success {
+            border-color: #333333;
+            color: #999999;
+            background: #0a0a0a;
+            display: block;
+        }
+
+        .status.error {
+            border-color: #333333;
+            color: #ffffff;
+            background: #0f0f0f;
+            display: block;
+        }
+
+        .loader {
+            display: none;
+            text-align: center;
+            margin: 40px 0;
+        }
+
+        .loader.show {
+            display: block;
+        }
+
+        .spinner {
+            border: 1px solid #1a1a1a;
+            border-top: 1px solid #ffffff;
+            border-radius: 50%;
+            width: 40px;
+            height: 40px;
+            animation: spin 1s linear infinite;
+            margin: 0 auto 20px;
+        }
+
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .loader p {
+            font-size: 0.85em;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            color: #666666;
+        }
+
+        .divider {
+            height: 1px;
+            background: #1a1a1a;
+            margin: 60px 0;
+        }
+
+        /* Grid adjustment for mobile */
+        @media (max-width: 768px) {
+            .container {
+                padding: 30px;
+            }
+
+            .face-inputs {
+                grid-template-columns: repeat(2, 1fr);
+            }
+
+            .controls {
+                flex-direction: column;
+                gap: 20px;
+            }
+
+            .control-group {
+                width: 100%;
+                justify-content: space-between;
+            }
+
+            select {
+                width: 100%;
+            }
+
+            button {
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>CUBEMAP TO EQUIRECTANGULAR</h1>
+        <p class="subtitle">Panoramic Image Converter</p>
+        
+        <div class="instructions">
+            <h3>Instructions</h3>
+            <ol>
+                <li>Upload all six cubemap faces</li>
+                <li>Select output resolution preset</li>
+                <li>Convert to equirectangular format</li>
+                <li>Download panoramic image</li>
+            </ol>
+        </div>
+
+        <div class="input-section">
+            <div class="face-inputs">
+                <div class="face-input" onclick="document.getElementById('front').click()">
+                    <label class="face-label">Front +Z</label>
+                    <input type="file" id="front" accept="image/*">
+                    <img class="face-preview" id="preview-front">
+                </div>
+                <div class="face-input" onclick="document.getElementById('back').click()">
+                    <label class="face-label">Back -Z</label>
+                    <input type="file" id="back" accept="image/*">
+                    <img class="face-preview" id="preview-back">
+                </div>
+                <div class="face-input" onclick="document.getElementById('left').click()">
+                    <label class="face-label">Left -X</label>
+                    <input type="file" id="left" accept="image/*">
+                    <img class="face-preview" id="preview-left">
+                </div>
+                <div class="face-input" onclick="document.getElementById('right').click()">
+                    <label class="face-label">Right +X</label>
+                    <input type="file" id="right" accept="image/*">
+                    <img class="face-preview" id="preview-right">
+                </div>
+                <div class="face-input" onclick="document.getElementById('top').click()">
+                    <label class="face-label">Top +Y</label>
+                    <input type="file" id="top" accept="image/*">
+                    <img class="face-preview" id="preview-top">
+                </div>
+                <div class="face-input" onclick="document.getElementById('bottom').click()">
+                    <label class="face-label">Bottom -Y</label>
+                    <input type="file" id="bottom" accept="image/*">
+                    <img class="face-preview" id="preview-bottom">
+                </div>
+            </div>
+
+            <div class="controls">
+                <div class="control-group">
+                    <label for="resolution">Resolution</label>
+                    <select id="resolution">
+                        <option value="1024x512">1K — 1024 × 512</option>
+                        <option value="2048x1024" selected>2K — 2048 × 1024</option>
+                        <option value="4096x2048">4K — 4096 × 2048</option>
+                        <option value="8192x4096">8K — 8192 × 4096</option>
+                    </select>
+                </div>
+                <button id="convertBtn" onclick="convertToEquirectangular()">Convert</button>
+            </div>
+
+            <div class="status" id="status"></div>
+            <div class="loader" id="loader">
+                <div class="spinner"></div>
+                <p>Processing</p>
+            </div>
+        </div>
+
+        <div class="divider"></div>
+
+        <div class="output-section">
+            <canvas id="outputCanvas"></canvas>
+            <div class="download-section">
+                <button id="downloadBtn" onclick="downloadImage()">Download Image</button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const faces = {
+            front: null,
+            back: null,
+            left: null,
+            right: null,
+            top: null,
+            bottom: null
+        };
+
+        const faceImages = {};
+
+        // Add file input listeners
+        ['front', 'back', 'left', 'right', 'top', 'bottom'].forEach(face => {
+            document.getElementById(face).addEventListener('change', function(e) {
+                handleFileSelect(e, face);
+            });
+        });
+
+        function handleFileSelect(e, face) {
+            const file = e.target.files[0];
+            if (file && file.type.startsWith('image/')) {
+                const reader = new FileReader();
+                reader.onload = function(event) {
+                    const img = new Image();
+                    img.onload = function() {
+                        faces[face] = img;
+                        faceImages[face] = img;
+                        
+                        // Show preview
+                        const preview = document.getElementById(`preview-${face}`);
+                        preview.src = event.target.result;
+                        preview.classList.add('show');
+                        
+                        // Update face input style
+                        e.target.parentElement.classList.add('loaded');
+                        
+                        updateConvertButton();
+                    };
+                    img.src = event.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+
+        function updateConvertButton() {
+            const allLoaded = Object.values(faces).every(face => face !== null);
+            document.getElementById('convertBtn').disabled = !allLoaded;
+        }
+
+        function showStatus(message, type) {
+            const status = document.getElementById('status');
+            status.textContent = message;
+            status.className = `status ${type}`;
+            if (type === 'error') {
+                setTimeout(() => {
+                    status.className = 'status';
+                }, 5000);
+            }
+        }
+
+        function convertToEquirectangular() {
+            // Check if all faces are loaded
+            if (!Object.values(faces).every(face => face !== null)) {
+                showStatus('All six faces required', 'error');
+                return;
+            }
+
+            const loader = document.getElementById('loader');
+            loader.classList.add('show');
+            
+            // Get resolution from dropdown
+            const resolution = document.getElementById('resolution').value.split('x');
+            const outputWidth = parseInt(resolution[0]);
+            const outputHeight = parseInt(resolution[1]);
+            
+            const canvas = document.getElementById('outputCanvas');
+            const ctx = canvas.getContext('2d');
+            
+            canvas.width = outputWidth;
+            canvas.height = outputHeight;
+            
+            // Create temporary canvases for each face
+            const faceCanvases = {};
+            const faceSize = faces.front.width; // Assume all faces are same size
+            
+            Object.keys(faces).forEach(faceName => {
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = faceSize;
+                tempCanvas.height = faceSize;
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCtx.drawImage(faces[faceName], 0, 0);
+                faceCanvases[faceName] = tempCtx;
+            });
+            
+            const imageData = ctx.createImageData(outputWidth, outputHeight);
+            const data = imageData.data;
+            
+            // Conversion algorithm
+            for (let y = 0; y < outputHeight; y++) {
+                for (let x = 0; x < outputWidth; x++) {
+                    // Convert to spherical coordinates
+                    const theta = (y / outputHeight) * Math.PI; // 0 to PI (top to bottom)
+                    const phi = (x / outputWidth) * 2 * Math.PI - Math.PI; // -PI to PI
+                    
+                    // Convert to 3D cartesian coordinates on unit sphere
+                    const px = Math.sin(theta) * Math.cos(phi);
+                    const py = Math.cos(theta);
+                    const pz = Math.sin(theta) * Math.sin(phi);
+                    
+                    // Determine which cube face and get UV coordinates
+                    let faceCtx, u, v;
+                    
+                    const absX = Math.abs(px);
+                    const absY = Math.abs(py);
+                    const absZ = Math.abs(pz);
+                    
+                    if (absX >= absY && absX >= absZ) {
+                        // Left or Right face
+                        if (px > 0) {
+                            // Right face (+X)
+                            faceCtx = faceCanvases.right;
+                            u = (-pz / absX + 1) * 0.5;
+                            v = (-py / absX + 1) * 0.5;
+                        } else {
+                            // Left face (-X)
+                            faceCtx = faceCanvases.left;
+                            u = (pz / absX + 1) * 0.5;
+                            v = (-py / absX + 1) * 0.5;
+                        }
+                    } else if (absY >= absX && absY >= absZ) {
+                        // Top or Bottom face
+                        if (py > 0) {
+                            // Top face (+Y)
+                            faceCtx = faceCanvases.top;
+                            u = (px / absY + 1) * 0.5;
+                            v = (pz / absY + 1) * 0.5;
+                        } else {
+                            // Bottom face (-Y)
+                            faceCtx = faceCanvases.bottom;
+                            u = (px / absY + 1) * 0.5;
+                            v = (-pz / absY + 1) * 0.5;
+                        }
+                    } else {
+                        // Front or Back face
+                        if (pz > 0) {
+                            // Front face (+Z)
+                            faceCtx = faceCanvases.front;
+                            u = (px / absZ + 1) * 0.5;
+                            v = (-py / absZ + 1) * 0.5;
+                        } else {
+                            // Back face (-Z)
+                            faceCtx = faceCanvases.back;
+                            u = (-px / absZ + 1) * 0.5;
+                            v = (-py / absZ + 1) * 0.5;
+                        }
+                    }
+                    
+                    // Sample from the face
+                    const faceX = Math.floor(u * faceSize);
+                    const faceY = Math.floor(v * faceSize);
+                    
+                    const pixelData = faceCtx.getImageData(
+                        Math.min(faceX, faceSize - 1),
+                        Math.min(faceY, faceSize - 1),
+                        1, 1
+                    ).data;
+                    
+                    const idx = (y * outputWidth + x) * 4;
+                    data[idx] = pixelData[0];
+                    data[idx + 1] = pixelData[1];
+                    data[idx + 2] = pixelData[2];
+                    data[idx + 3] = 255;
+                }
+            }
+            
+            ctx.putImageData(imageData, 0, 0);
+            
+            loader.classList.remove('show');
+            canvas.classList.add('show');
+            document.getElementById('downloadBtn').classList.add('show');
+            showStatus('Conversion complete', 'success');
+        }
+
+        function downloadImage() {
+            const canvas = document.getElementById('outputCanvas');
+            const link = document.createElement('a');
+            link.download = 'equirectangular_panorama.png';
+            link.href = canvas.toDataURL();
+            link.click();
+        }
+    </script>
+</body>
+</html>
